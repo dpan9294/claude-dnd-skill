@@ -10,6 +10,18 @@ Versions before **1.6.0** are reconstructed retroactively from git history; the 
 
 ## [Unreleased]
 
+### Added — dungeon map, Ukrainian interface, Ash skin, internet play (fork: dpan9294)
+
+- **Dungeon map.** `display/map.py` keeps a per-campaign `map.json` (rooms, doors/bars, braziers, hero tokens with carried light, markers, fallen enemies, Souls-like bloodstains, a status line and a journal) and pushes it to the display (`POST /map`, replayed on SSE connect). The TV gets a 🗺 button + overlay; phones get a fourth **Map** tab that centres on the player's own hero. Rendered client-side as lit stone with fog over unlit areas (`display/ext/map.js`).
+- **Ukrainian interface** (`display/ext/i18n-uk.js`), enabled per campaign with `ui_language: uk`, per device with `?lang=uk`. `language: <code>` in Session Flags tells the DM to run the whole game in that language.
+- **Ash skin** — a dark, ember-accented overlay on the Editorial layout; campaign default via `display_skin: ash`.
+- **Internet play.** `start-display.sh --tunnel` publishes the localhost display through a Cloudflare quick tunnel and prints an invite link (`/join?key=…`, fresh key per launch). Tunnelled requests need the invite cookie and can reach only player endpoints; rate limiting and device approval use the real client IP.
+
+### Fixed
+
+- `/character/<name>` stripped non-Latin names (a Cyrillic PC's Sheet tab returned 400); it now accepts Unicode word characters and also honours the `/dm:dnd path` data root.
+- `xp.py` reads `**Досвід:**` / `**Рівень:**` as well as the English labels.
+
 ## [2.6.0] — 2026-10-09 — Narration audio without an API key, racial bonuses that are applied rather than remembered, and a rename that works in every script
 
 ### Fixed — "apply racial bonuses" was a request to the model, with nothing behind it

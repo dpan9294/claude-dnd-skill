@@ -419,6 +419,203 @@ app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 CORS(app)
 
+
+# ─── Remote play over an internet tunnel ──────────────────────────────────────
+# `start-display.sh --tunnel` keeps the server bound to localhost and exposes it
+# through a Cloudflare quick tunnel so friends can join from their own homes.
+# Everything that arrives through the tunnel is treated as an untrusted remote
+# player:
+#   • it must carry the join cookie, set once by opening the invite link
+#     (/join?key=…); the key lives in the runtime dir and is rotated per launch;
+#   • it may only reach the player-facing endpoints below — narration, stats,
+#     map, dice-requests, device approval, clears and queue drains stay
+#     DM-only (local scripts), so a leaked link can't puppet the DM;
+#   • rate limiting and device approval key on the real client IP, not the
+#     tunnel's 127.0.0.1.
+# Requests that did not come through a proxy are unaffected.
+
+TUNNEL_KEY_FILE = rt(".tunnel_key")
+_JOIN_COOKIE    = "dnd_join"
+
+_REMOTE_ENDPOINTS = {
+    # read-only / page assets
+    "index", "serve_icon", "favicon", "serve_ext", "srd_lookup", "ping",
+    "health", "stream", "get_character_sheet", "dice_request_status",
+    "audio_sfx", "get_map", "join",
+    # player actions
+    "player_input", "player_dice", "stage_input", "ready_input",
+    "unstage_input", "skip_input", "roll_pref", "narration_pref",
+    "tts_synthesize", "help_request",
+}
+
+
+def _via_tunnel() -> bool:
+    """True when the request was relayed by a reverse proxy / tunnel."""
+    h = request.headers
+    return bool(h.get("Cf-Connecting-Ip") or h.get("Cf-Ray") or h.get("X-Forwarded-For"))
+
+
+def _client_ip() -> str:
+    """Best-effort real client IP (tunnel-aware)."""
+    if _via_tunnel():
+        ip = request.headers.get("Cf-Connecting-Ip") or ""
+        if not ip:
+            ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0]
+        ip = ip.strip()[:64]
+        if ip:
+            return ip
+    return request.remote_addr or "?"
+
+
+def _tunnel_key() -> str:
+    try:
+        return open(TUNNEL_KEY_FILE, encoding="utf-8").read().strip()
+    except OSError:
+        return ""
+
+
+def _remote_denied(msg_uk: str, msg_en: str, code: int = 403):
+    page = (
+        "<!doctype html><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>D&amp;D</title>"
+        "<body style='background:#0e0d0c;color:#ddd6c9;font:18px/1.5 Georgia,serif;"
+        "display:grid;place-items:center;min-height:100vh;margin:0;padding:24px;text-align:center'>"
+        f"<div><p style='font-size:22px;margin:0 0 8px'>{msg_uk}</p>"
+        f"<p style='opacity:.6;margin:0'>{msg_en}</p></div>"
+    )
+    return Response(page, status=code, mimetype="text/html")
+
+
+@app.before_request
+def _remote_gate():
+    if not _via_tunnel():
+        return None
+    key = _tunnel_key()
+    if not key:
+        return _remote_denied("Віддалений доступ вимкнено.", "Remote access is disabled.")
+    if request.endpoint == "join":
+        return None
+    cookie = request.cookies.get(_JOIN_COOKIE, "")
+    if not cookie or not hmac.compare_digest(cookie, key):
+        return _remote_denied(
+            "Щоб приєднатися, відкрий посилання-запрошення від ведучого.",
+            "Open the invite link from your DM to join.")
+    if request.endpoint not in _REMOTE_ENDPOINTS:
+        return "Forbidden", 403
+    if request.method == "POST" and not _rate_ok(_client_ip()):
+        return "Too many requests", 429
+    return None
+
+
+@app.route("/join")
+def join():
+    """Invite link target: /join?key=… sets the join cookie, then opens the phone view."""
+    key = _tunnel_key()
+    given = request.args.get("key", "")
+    if not key or not given or not hmac.compare_digest(given, key):
+        return _remote_denied("Посилання недійсне або застаріле. Попроси у ведучого нове.",
+                              "This invite link is invalid or expired.")
+    resp = Response(status=302)
+    resp.headers["Location"] = "/?view=input"
+    resp.set_cookie(_JOIN_COOKIE, key, max_age=7 * 24 * 3600, httponly=True,
+                    secure=_via_tunnel(), samesite="Lax")
+    return resp
+
+
+# ─── Extension assets (map, Ukrainian UI, Ash skin) ───────────────────────────
+
+_EXT_DIR = os.path.join(_HERE, "ext")
+
+
+@app.route("/ext/<path:filename>")
+def serve_ext(filename):
+    return send_from_directory(_EXT_DIR, filename)
+
+
+# ─── Dungeon map ──────────────────────────────────────────────────────────────
+# The DM's map lives with the campaign (<campaign>/map.json, written by map.py)
+# and is pushed here so every screen and phone renders the same state. A copy is
+# kept in the runtime dir so a restarted server can replay it immediately.
+
+MAP_FILE = rt("map.json")
+_MAP_MAX_BYTES = 512 * 1024
+_map_lock = threading.Lock()
+_current_map: dict = {}
+try:
+    with open(MAP_FILE, encoding="utf-8") as _mf:
+        _loaded_map = json.load(_mf)
+    if isinstance(_loaded_map, dict):
+        _current_map = _loaded_map
+except Exception:
+    pass
+
+
+@app.route("/map", methods=["GET"])
+def get_map():
+    with _map_lock:
+        return jsonify(_current_map)
+
+
+@app.route("/map", methods=["POST"])
+def set_map():
+    global _current_map
+    if not _token_ok():
+        return "Forbidden", 403
+    raw = request.get_data(cache=False) or b""
+    if len(raw) > _MAP_MAX_BYTES:
+        return "Map too large", 413
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return "Bad JSON", 400
+    if not isinstance(data, dict):
+        return "Map must be a JSON object", 400
+    with _map_lock:
+        _current_map = data
+    try:
+        with open(MAP_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except OSError:
+        pass
+    _broadcast({"map": data})
+    return "", 204
+
+
+# ─── Per-campaign display defaults (language, skin) ──────────────────────────
+
+def _campaign_flag(name: str) -> str:
+    """Read `name: value` from the active campaign's state.md (Session Flags)."""
+    try:
+        camp = open(CAMP_FILE, encoding="utf-8").read().strip()
+    except Exception:
+        return ""
+    camp = re.sub(r"[^A-Za-z0-9_-]", "", camp)[:50]
+    if not camp:
+        return ""
+    try:
+        from paths import campaign_dir as _cdir
+        path = str(_cdir(camp) / "state.md")
+    except Exception:
+        root = os.environ.get("DND_CAMPAIGN_ROOT", "").strip() or os.path.expanduser("~/.claude/dnd")
+        path = os.path.join(os.path.expanduser(root), "campaigns", camp, "state.md")
+    try:
+        text = open(path, encoding="utf-8").read()
+    except Exception:
+        return ""
+    m = re.search(rf"^[\s\-*]*{re.escape(name)}\s*:\s*`?([A-Za-z_-]+)`?", text, re.MULTILINE)
+    return m.group(1).strip().lower() if m else ""
+
+
+def _ui_lang() -> str:
+    v = os.environ.get("DND_UI_LANG", "").strip().lower() or _campaign_flag("ui_language")
+    return v if v in ("en", "uk") else "en"
+
+
+def _default_skin() -> str:
+    v = os.environ.get("DND_DEFAULT_SKIN", "").strip().lower() or _campaign_flag("display_skin")
+    return v if re.fullmatch(r"[a-z]{2,20}", v or "") else ""
+
 # Wire audio broadcast after _broadcast is defined (see bottom of file)
 # — done lazily via set_broadcast() called after app is created.
 
@@ -1195,6 +1392,8 @@ def index():
         lan_token=_lan_token or "",
         narrator_voice=_read_narrator_voice(),
         tts_available=(_tts is not None),
+        ui_lang=_ui_lang(),
+        default_skin=_default_skin(),
     )
 
 
@@ -1798,7 +1997,7 @@ def narration_pref():
     """
     if not _token_ok():
         return "Forbidden", 403
-    if not _rate_ok(request.remote_addr or "?"):
+    if not _rate_ok(_client_ip()):
         return "Rate limited", 429
     data = request.get_json(silent=True) or {}
     try:
@@ -1832,7 +2031,7 @@ def roll_pref():
     """
     if not _token_ok():
         return "Forbidden", 403
-    if not _rate_ok(request.remote_addr or "?"):
+    if not _rate_ok(_client_ip()):
         return "Rate limited", 429
     data = request.get_json(silent=True) or {}
     char = (data.get("character") or "").strip()
@@ -1945,7 +2144,7 @@ def tts_synthesize():
         return "TTS module unavailable", 503
     if not _token_ok():
         return "Forbidden", 403
-    if not _rate_ok(request.remote_addr or "?"):
+    if not _rate_ok(_client_ip()):
         return "Rate limited", 429
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
@@ -2334,7 +2533,9 @@ def get_character_sheet(character):
     if not _token_ok():
         return "Forbidden", 403
 
-    safe = re.sub(r"[^A-Za-z0-9 _-]", "", character).strip()[:50]
+    # Unicode word characters (Cyrillic etc.), space, apostrophe and hyphen —
+    # no dots or path separators, so the name can't escape characters/.
+    safe = re.sub(r"[^\w '\-]", "", character, flags=re.UNICODE).strip()[:50]
     if not safe:
         return "Bad character name", 400
 
@@ -2351,6 +2552,11 @@ def get_character_sheet(character):
     root = os.environ.get("DND_CAMPAIGN_ROOT", os.path.expanduser("~/.claude/dnd"))
     candidates = []
     if camp:
+        try:   # honour /dm:dnd path (config-file root) as well as the env var
+            from paths import campaign_dir as _cdir
+            candidates.append(str(_cdir(camp) / "characters" / f"{safe}.md"))
+        except Exception:
+            pass
         candidates.append(os.path.join(root, "campaigns", camp, "characters", f"{safe}.md"))
     candidates.append(os.path.expanduser(f"~/.claude/dnd/characters/{safe}.md"))
 
@@ -2403,11 +2609,11 @@ def stage_input():
     """
     if not _token_ok():
         return "Forbidden", 403
-    if not _rate_ok(request.remote_addr):
+    if not _rate_ok(_client_ip()):
         return "Too Many Requests", 429
 
     device_id = request.headers.get("X-DND-Device", "")
-    status    = _device_ok(device_id, request.remote_addr)
+    status    = _device_ok(device_id, _client_ip())
     if status == "denied":
         return "Forbidden", 403
     if status == "pending":
@@ -2453,11 +2659,11 @@ def ready_input():
     """
     if not _token_ok():
         return "Forbidden", 403
-    if not _rate_ok(request.remote_addr):
+    if not _rate_ok(_client_ip()):
         return "Too Many Requests", 429
 
     device_id = request.headers.get("X-DND-Device", "")
-    status    = _device_ok(device_id, request.remote_addr)
+    status    = _device_ok(device_id, _client_ip())
     if status == "denied":
         return "Forbidden", 403
     if status == "pending":
@@ -2491,7 +2697,7 @@ def unstage_input():
         return "Forbidden", 403
 
     device_id = request.headers.get("X-DND-Device", "")
-    if _device_ok(device_id, request.remote_addr) != "approved":
+    if _device_ok(device_id, _client_ip()) != "approved":
         return "Forbidden", 403
 
     data      = request.get_json(force=True, silent=True) or {}
@@ -2516,7 +2722,7 @@ def skip_input():
         return "Forbidden", 403
 
     device_id = request.headers.get("X-DND-Device", "")
-    if _device_ok(device_id, request.remote_addr) != "approved":
+    if _device_ok(device_id, _client_ip()) != "approved":
         return "Forbidden", 403
 
     data      = request.get_json(force=True, silent=True) or {}
@@ -2632,6 +2838,11 @@ def stream():
     with _stats_lock:
         if _current_stats:
             q.put_nowait({"stats": dict(_current_stats)})
+
+    # Send the current dungeon map so map panes render immediately.
+    with _map_lock:
+        if _current_map:
+            q.put_nowait({"map": _current_map})
 
     # Send current input queue so the pending indicator is accurate on reconnect.
     with _input_lock:

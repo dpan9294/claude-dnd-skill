@@ -1,0 +1,59 @@
+/* ash.css — "Ash" skin: a Dark-Souls-flavoured overlay on the Editorial layout.
+   Cold stone, bone-white text and a single ember accent. Deliberately dark in
+   every theme setting — a lightless world doesn't get a daylight mode.
+   Registered in index.html as { id:'ash', base:'editorial', variant:'ash' }. */
+
+:root[data-skin="editorial"][data-variant="ash"],
+:root[data-skin="editorial"][data-variant="ash"][data-theme="light"],
+:root[data-skin="editorial"][data-variant="ash"][data-theme="dark"] {
+  --e-canvas: #0e0d0c; --e-ink: #ddd6c9; --e-mut: rgba(221,214,201,.56);
+  --e-accent: #e8923a; --e-accent-ink: #f0a85a; --e-dice-text: #0e0d0c;
+  --e-block: #1b1917; --e-on-block: #ddd6c9; --e-hair: rgba(221,214,201,.14); --e-track: rgba(221,214,201,.12);
+  --e-strong: #171513; --e-on-strong: #ddd6c9; --e-hair-strong: rgba(221,214,201,.14); --e-track-strong: rgba(221,214,201,.12);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-skin="editorial"][data-variant="ash"]:not([data-theme]) {
+    --e-canvas: #0e0d0c; --e-ink: #ddd6c9; --e-mut: rgba(221,214,201,.56);
+    --e-accent: #e8923a; --e-accent-ink: #f0a85a; --e-dice-text: #0e0d0c;
+    --e-block: #1b1917; --e-on-block: #ddd6c9; --e-hair: rgba(221,214,201,.14); --e-track: rgba(221,214,201,.12);
+    --e-strong: #171513; --e-on-strong: #ddd6c9; --e-hair-strong: rgba(221,214,201,.14); --e-track-strong: rgba(221,214,201,.12);
+  }
+}
+
+:root[data-variant="ash"] body {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(232,146,58,.07), transparent 55%),
+    radial-gradient(ellipse at 50% 120%, rgba(0,0,0,.9), transparent 60%),
+    #0e0d0c !important;
+}
+
+/* Typography: Alegreya family throughout (Cyrillic-complete), SC for names. */
+:root[data-variant="ash"] body *:not(.dnd-map *) {
+  font-family: 'Alegreya Sans', 'Segoe UI', system-ui, sans-serif !important;
+}
+:root[data-variant="ash"] .dm-block p,
+:root[data-variant="ash"] .dm-block p em,
+:root[data-variant="ash"] .npc-block p,
+:root[data-variant="ash"] .npc-block p em,
+:root[data-variant="ash"] .player-block p,
+:root[data-variant="ash"] #player-input-text {
+  font-family: 'Alegreya', Georgia, serif !important;
+}
+:root[data-variant="ash"] .npc-name,
+:root[data-variant="ash"] .player-name,
+:root[data-variant="ash"] .sb-name,
+:root[data-variant="ash"] #scene-indicator,
+:root[data-variant="ash"] .dp-tab,
+:root[data-variant="ash"] #cs-title,
+:root[data-variant="ash"] #sheet-content h1,
+:root[data-variant="ash"] #sheet-content h2,
+:root[data-variant="ash"] #sheet-content h3,
+:root[data-variant="ash"] #cp-body h1,
+:root[data-variant="ash"] #cp-body h2,
+:root[data-variant="ash"] #cp-body h3 {
+  font-family: 'Alegreya SC', 'Cinzel', Georgia, serif !important;
+  letter-spacing: .04em;
+}
+
+:root[data-variant="ash"] .dice-result { font-variant-numeric: tabular-nums; }

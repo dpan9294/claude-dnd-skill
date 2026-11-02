@@ -1,0 +1,89 @@
+/* map.css — dungeon map panes (phone Map tab + TV overlay).
+   The map is deliberately single-theme: it is a lightless dungeon in every
+   skin, so its palette is fixed rather than following light/dark. */
+
+.dnd-map {
+  --dm-void: #0b0a09; --dm-stone: #171513; --dm-floor: #4a443c; --dm-wall: #6b6357;
+  --dm-ash: #ddd6c9; --dm-muted: #9a9183; --dm-ember: #e8923a; --dm-blood: #8e2b22;
+  --dm-wood: #5a3b22; --dm-iron: #8a8478; --dm-line: #2a2622;
+  display: flex; flex-direction: column; gap: 10px; min-height: 0;
+  color: var(--dm-ash); font-family: 'Alegreya Sans', 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px; line-height: 1.45;
+}
+.dnd-map .dm-map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dnd-map .dm-map-title { font-family: 'Alegreya SC', 'Cinzel', Georgia, serif; font-weight: 700; font-size: 19px; letter-spacing: .03em; line-height: 1.15; min-width: 0; }
+.dnd-map .dm-map-title small { display: block; font-family: 'Alegreya Sans', sans-serif; font-weight: 500; font-size: 13px; letter-spacing: 0; color: var(--dm-muted); }
+.dnd-map .dm-map-tools { display: flex; gap: 6px; flex: none; }
+.dnd-map .dm-map-btn {
+  min-width: 38px; height: 38px; padding: 0 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid #3a352f; background: var(--dm-stone); color: var(--dm-ash);
+  font: 700 18px/1 'Alegreya Sans', sans-serif; touch-action: manipulation;
+}
+.dnd-map .dm-map-btn:hover { border-color: var(--dm-ember); color: var(--dm-ember); }
+.dnd-map .dm-map-btn:focus-visible { outline: 2px solid var(--dm-ember); outline-offset: 2px; }
+.dnd-map .dm-map-where { border-left: 3px solid var(--dm-ember); background: var(--dm-stone); padding: 8px 12px; border-radius: 0 6px 6px 0; }
+.dnd-map .dm-map-where p { margin: 2px 0 0; }
+.dnd-map .dm-map-k { font: 700 11px/1 'Alegreya Sans', sans-serif; text-transform: uppercase; letter-spacing: .1em; color: var(--dm-ember); }
+.dnd-map .dm-map-scroll {
+  overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 6px; border: 1px solid var(--dm-line);
+  background: var(--dm-void); box-shadow: inset 0 0 50px #000; overscroll-behavior: contain;
+}
+.dnd-map .dm-map-canvas { width: 100%; min-width: 100%; }
+.dnd-map .dm-map-canvas svg { display: block; width: 100%; height: auto; }
+.dnd-map .dm-map-empty { padding: 40px 16px; text-align: center; color: var(--dm-muted); }
+.dnd-map .dm-map-more { background: var(--dm-stone); border: 1px solid var(--dm-line); border-radius: 6px; padding: 8px 12px; }
+.dnd-map .dm-map-more summary { cursor: pointer; font-family: 'Alegreya SC', Georgia, serif; font-weight: 700; }
+.dnd-map .dm-map-log { margin: 8px 0 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 3px; color: var(--dm-muted); }
+.dnd-map .dm-map-log li:last-child { color: var(--dm-ash); }
+.dnd-map .dm-map-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 12px; margin-top: 10px; font-size: 14px; }
+.dnd-map .dm-map-legend span { display: flex; align-items: center; gap: 8px; }
+.dnd-map .dm-map-legend svg { flex: none; }
+.dnd-map .dm-map-scale { margin: 8px 0 0; font-size: 13px; color: var(--dm-muted); }
+
+@keyframes dmFlicker { 0%,100% { opacity: .85 } 30% { opacity: 1 } 55% { opacity: .7 } 80% { opacity: .95 } }
+@keyframes dmPulse { 0% { opacity: .9; } 70% { opacity: .15; } 100% { opacity: .9; } }
+.dnd-map .dm-flick { animation: dmFlicker 2.4s infinite ease-in-out; }
+.dnd-map .dm-flick2 { animation: dmFlicker 3.1s infinite ease-in-out reverse; }
+.dnd-map .dm-pulse { animation: dmPulse 1.8s infinite ease-in-out; }
+@media (prefers-reduced-motion: reduce) { .dnd-map .dm-flick, .dnd-map .dm-flick2, .dnd-map .dm-pulse { animation: none; } }
+
+/* ── Phone: Map tab ─────────────────────────────────────────────────────── */
+#map-pane { display: none; }
+body.input-only #input-body[data-active-tab="map"] #map-pane { display: flex; }
+body.input-only #input-body[data-active-tab="map"] [data-tab-section]:not([data-tab-section="map"]) { display: none !important; }
+body.input-only #map-pane .dm-map-scroll { max-height: 62vh; }
+
+/* ── TV: 🗺 button + overlay ──────────────────────────────────────────────── */
+#map-btn {
+  position: fixed; bottom: 60px; right: 24px; z-index: 6;
+  font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: rgba(200,165,80,.82); background: rgba(20,14,6,.55);
+  border: 1px solid rgba(180,140,60,.5); border-radius: 3px; padding: 6px 12px; cursor: pointer;
+  box-shadow: 0 0 6px rgba(180,140,60,.15);
+}
+#map-btn:hover { color: rgba(220,185,100,1); border-color: rgba(210,170,80,.85); }
+#map-btn:not(.dm-has-map) { opacity: .55; }
+body.input-only #map-btn { display: none; }
+:root[data-skin="editorial"] body:not(.input-only) #ed-rail #map-btn {
+  position: static; width: auto; font-family: 'Syne', sans-serif; font-size: 11px; letter-spacing: .08em;
+  color: var(--e-on-strong); background: var(--e-strong); border-color: var(--e-hair-strong);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px;
+}
+#map-overlay {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  background: rgba(0,0,0,.72); padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+#map-overlay[hidden] { display: none; }
+#map-overlay-body {
+  width: min(1240px, 100%); max-height: 100%; overflow: auto; padding: 16px 18px;
+  background: #110f0d; border: 1px solid #2a2622; border-radius: 8px; box-shadow: 0 20px 60px #000;
+}
+#map-overlay-body .dm-map-scroll { max-height: calc(100vh - 220px); }
+
+/* Four phone tabs (Хід / Кидок / Аркуш / Карта) must clear the ⚙ button. */
+body.input-only #dp-tabs { padding-right: 54px !important; }
+body.input-only .dp-tab { font-size: 14px !important; letter-spacing: .03em !important; padding-left: 2px !important; padding-right: 2px !important; min-width: 0; }
+
+/* Map button: icon + label, matching the editorial rail launchers. */
+#map-btn .ed-ic { font-size: 12px; }
+:root[data-skin="editorial"] body:not(.input-only) #ed-rail #map-btn .ed-ic { font-size: 19px; line-height: 1; }

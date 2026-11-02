@@ -267,6 +267,32 @@ If `check_input.py` returns output, prepend it to the player's terminal input wh
 
 ---
 
+## Map Script — `display/map.py`
+
+Saves to `<campaign>/map.json` and pushes to the display (skipped silently when it isn't running; `--no-push` to save only). `--campaign NAME` defaults to the active campaign. Coordinates are grid cells (1 cell = 5 ft).
+
+```bash
+M="python3 ${CLAUDE_SKILL_DIR}/display/map.py"
+$M init --title "Вугільна Яма" --area "Ярус I" --w 34 --h 26   # new blank map (overwrites!)
+$M room c1 4 10 26 2 --name "Камерний коридор"                  # add/update a rectangle (ids starting with k = cells: straw floor)
+$M room well 22 19 6 6 --name "Колодязь" --hidden               # pre-draw, reveal later:
+$M reveal well                                                  # also reveals doors on its edge
+$M door 30 10 v --kind bars --state locked                      # h = top edge of cell (x,y), v = left edge
+$M brazier b1 27 10 --name "жаровня" --lit                      # light b1 / douse b1
+$M hero "Діма" 26 11 --light 4 --color "#6f9bd1"                # place/move token (name match is case-insensitive)
+$M mark 3 10 --icon "?" --label "шкребіння" [--dx 1 --dy -0.9]   # label offset in cells
+$M unmark "шкребіння"   |   $M unmark --at 3 10
+$M dead 7 10 "Згаслий"                                          # grey ✕ where it fell
+$M stain "Ілля" 12 18 "20 зм"  |  $M unstain "Ілля"             # Souls-like dropped gold
+$M where "БІЙ · Раунд 1: ▶ Ілля (8) → Діма (6)"                 # banner above the map
+$M log "Ілля відімкнув вартівню."                               # journal (last 40 kept)
+$M show            # compact summary for the DM   |   $M show --json
+$M push            # re-send the saved map (e.g. after a display restart)
+$M import map.json |   $M export backup.json
+```
+
+---
+
 ## Tracker Script — `scripts/tracker.py`
 Tracks conditions, concentration, timed effects, and death saves. State persists at `~/.claude/dnd/campaigns/<name>/tracker.json`.
 
