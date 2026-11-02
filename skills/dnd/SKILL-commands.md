@@ -7,13 +7,14 @@ Full step-by-step procedures for all `/dm:dnd` slash commands. Load this file at
 ---
 
 ## `/dm:dnd new <campaign-name> [theme]`
-1. **Session setup — call `AskUserQuestion`** with **two questions**:
+1. **Session setup — call `AskUserQuestion`** with **two questions** (plus Q3 *Autorun?* when a display is chosen):
 
    **Q1 *"Display & input mode?"***
    - `No display` → continue without display.
    - `Display (local)` → `bash ${CLAUDE_SKILL_DIR}/display/start-display.sh`, print URL, set `_display_running = true`, then `python3 ${CLAUDE_SKILL_DIR}/display/push_stats.py --clear`.
    - `Display (LAN)` → `bash ${CLAUDE_SKILL_DIR}/display/start-display.sh --lan`, print both URLs, set `_display_running = true`, then `--clear` as above.
-   - `Display + autorun (LAN)` → as **Display (LAN)**, and write `autorun: true` to `state.md → ## Session Flags`.
+   - `Display (internet)` → `bash ${CLAUDE_SKILL_DIR}/display/start-display.sh --tunnel`: the display runs locally and a Cloudflare quick tunnel publishes it. The script prints an **invite link** (also saved to `<runtime-dir>/invite.txt`) — give it to the players; it opens the phone controller. Only player endpoints are reachable through the tunnel (narration, stats, map, dice-requests stay DM-only) and the link dies when the display stops. If the script reports `cloudflared` is missing, relay its one-line install command (Windows: `winget install --id Cloudflare.cloudflared`) and fall back to local. Set `_display_running = true`., then `--clear` as above.
+   - (`AskUserQuestion` holds four options — **autorun** is asked as a separate yes/no question **Q3 "Autorun?"** whenever a display mode was picked; on yes write `autorun: true` to `state.md → ## Session Flags`. The old `Display + autorun (LAN)` choice = `Display (LAN)` + Q3 yes.)
 
    **Q2 *"Dice rolls?"*** — set how PC d20s are handled (see SKILL.md "Dice convention"):
    - `Players roll their own` (default) → write `roll_mode: players` to `state.md → ## Session Flags`. You will call for each PC roll and wait — never auto-roll a PC.
@@ -68,13 +69,14 @@ Full step-by-step procedures for all `/dm:dnd` slash commands. Load this file at
 
 ## `/dm:dnd load <campaign-name>`
 0. **Pick the campaign if none was named.** If `<campaign-name>` was supplied (or the player clearly named one), use it. Otherwise `ls` the campaigns dir (`~/.claude/dnd/campaigns/` or `$DND_CAMPAIGN_ROOT/campaigns/`) and **call `AskUserQuestion`**: *"Which campaign?"* with the existing campaign names as options (most-recently-played first — sort by `state.md` mtime). The player can pick "Other" to type a name. If there are no campaigns, tell them and offer `/dm:dnd new`.
-1. **Session setup — call `AskUserQuestion`** with **two questions** (not typed y/n prompts):
+1. **Session setup — call `AskUserQuestion`** with **two questions** (plus Q3 *Autorun?* when a display is chosen; not typed y/n prompts):
 
    **Q1 *"Display & input mode?"***
    - `No display` → continue without display.
    - `Display (local)` → `bash ${CLAUDE_SKILL_DIR}/display/start-display.sh`, print URL, set `_display_running = true`.
    - `Display (LAN)` → `bash ${CLAUDE_SKILL_DIR}/display/start-display.sh --lan`, print both URLs, set `_display_running = true`.
-   - `Display + autorun (LAN)` → as **Display (LAN)**, and also write `autorun: true` to `state.md → ## Session Flags`; enter the autorun wait after the recap.
+   - `Display (internet)` → `bash ${CLAUDE_SKILL_DIR}/display/start-display.sh --tunnel`: the display runs locally and a Cloudflare quick tunnel publishes it. The script prints an **invite link** (also saved to `<runtime-dir>/invite.txt`) — give it to the players; it opens the phone controller. Only player endpoints are reachable through the tunnel (narration, stats, map, dice-requests stay DM-only) and the link dies when the display stops. If the script reports `cloudflared` is missing, relay its one-line install command (Windows: `winget install --id Cloudflare.cloudflared`) and fall back to local. Set `_display_running = true`.
+   - (`AskUserQuestion` holds four options — **autorun** is asked as a separate yes/no question **Q3 "Autorun?"** whenever a display mode was picked; on yes write `autorun: true` to `state.md → ## Session Flags` and enter the autorun wait after the recap.)
 
    **Q2 *"Dice rolls?"*** — confirm how PC d20s are handled this session (see SKILL.md "Dice convention"). Pre-fill the recommended option from the existing `roll_mode` in `state.md` if present, else `players`:
    - `Players roll their own` → write `roll_mode: players`. Call for each PC roll and wait — never auto-roll a PC.
@@ -190,6 +192,8 @@ Full step-by-step procedures for all `/dm:dnd` slash commands. Load this file at
    python3 ${CLAUDE_SKILL_DIR}/display/push_stats.py --quests '[...]'
    ```
    The quest panel only appears when at least one quest is present — do not skip this push.
+6b. **Restore the dungeon map** (only if `<campaign>/map.json` exists): `python3 ${CLAUDE_SKILL_DIR}/display/map.py --campaign <campaign-name> push`, then `map.py show` to load positions, revealed areas, lit braziers and bloodstains into context. Treat `map.json` as canon for where everyone stands.
+
 7. **Pull scene-context from the campaign graph.** Always run, even if you suspect `graph.json` doesn't exist — the script exits cleanly with a notice when uninitialized.
    ```bash
    python3 ${CLAUDE_SKILL_DIR}/scripts/campaign_graph.py scene-context \

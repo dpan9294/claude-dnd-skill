@@ -59,7 +59,7 @@ Then branch to the matching procedure in `SKILL-commands.md` (`/dm:dnd load`, `/
 
 **Use `AskUserQuestion` (not a typed prompt) for these specific decision points** — they have small, well-defined option sets and benefit from the structured picker:
 - **Which campaign to load** — when `/dm:dnd load` is chosen without a name (or the name is ambiguous). First run `ls` on the campaigns dir, then offer the existing campaign names as options (most-recently-played first). With "Other" the player can type a name you didn't list.
-- **Display & input mode** — the session-setup choice at `/dm:dnd load` and `/dm:dnd new` (see those procedures). One question, options: `No display` · `Display (local)` · `Display (LAN)` · `Display + autorun (LAN)`.
+- **Display & input mode** — the session-setup choice at `/dm:dnd load` and `/dm:dnd new` (see those procedures). Options: `No display` · `Display (local)` · `Display (LAN)` · `Display (internet)`, then a yes/no *Autorun?* when a display was chosen.
 
 For free-form or open-ended input (a character concept, a campaign theme, a narrative choice mid-scene) keep using natural prose — `AskUserQuestion` is for **bounded** choices, not for everything. Don't interrogate the player with menus when a sentence will do.
 
@@ -415,6 +415,29 @@ g. push_stats.py --turn-current  ← advance turn pointer (still separate — no
 Step (f) is the most commonly missed. Every narration block must be sent.
 Step (g) uses `push_stats.py --turn-current` directly because it has no narration to bundle with.
 `tracker.py effect tick` is the headless fallback — it fires regardless of whether the display is running.
+
+---
+
+## Dungeon Map (`display/map.py`)
+
+When a campaign has `<campaign>/map.json` (or the table asks for a map), **keep it current after every action that changes where someone stands or what they know** — it is the players' shared view of the world, shown on the TV (🗺 button) and in every phone's Map tab. One cell = 5 ft; x east, y south. Update in the **same Bash call** as the narration send, before it:
+
+| Event | Command |
+|---|---|
+| Party moves | `map.py hero "<PC>" X Y` (`--light 4` while carrying a torch, `--light 0` when it goes out) |
+| New area seen / entered | `map.py room <id> X Y W H --name "…"` (or `reveal <id>` for a pre-drawn `--hidden` room) |
+| Door / bars found or changed | `map.py door X Y h|v --kind wood|bars --state open|closed|locked|broken` |
+| Bonfire/brazier found / lit / put out | `map.py brazier <id> X Y --name "…" [--lit]` · `light <id>` · `douse <id>` |
+| Enemy, clue, item spotted | `map.py mark X Y --icon "☠" --label "…"` · remove with `unmark "<label>"` |
+| Creature or NPC killed | `map.py dead X Y "<name>"` (grey ✕; replaces its live marker) |
+| PC died and dropped gold (if the campaign uses Souls-like death) | `map.py stain "<PC>" X Y "<coins>"` · recovered → `unstain "<PC>"` |
+| Status line / journal | `map.py where "…"` (combat order goes here: `БІЙ · Раунд 2: ▶ Ілля → Діма → Згаслий`) · `map.py log "…"` |
+
+Give distances in cells **and** feet/metres when players ask. Never reveal unexplored rooms early — draw only what the party has seen. Full syntax: `SKILL-scripts.md → Map Script`.
+
+## Language
+
+If `state.md → ## Session Flags` has `language: <code>` (e.g. `language: uk`), run the **whole game in that language** — narration, NPC dialogue, roll calls, tutor hints, XP reasons, map labels and every `send.py` block. Keep script arguments that are identifiers (campaign slug, flags) as they are. `ui_language: uk` switches the display and phone chrome to Ukrainian; `display_skin: ash` makes the dark *Ash* style the default on new devices (each device can still change Style in Settings).
 
 ---
 

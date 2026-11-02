@@ -5,6 +5,7 @@
 #   bash start-display.sh              # localhost only, HTTP (default)
 #   bash start-display.sh --lan        # LAN mode, HTTP  ← use this for home/trusted networks
 #   bash start-display.sh --lan --tls  # LAN mode, HTTPS ← use this on public/untrusted networks
+#   bash start-display.sh --tunnel     # play over the internet: Cloudflare quick tunnel + invite link
 #
 # HTTP is the default. Guests and new devices connect instantly with no setup.
 # TLS adds encryption but requires a one-time certificate install on each device.
@@ -25,13 +26,22 @@ RT="$(python3 -c "import sys,os;sys.path.insert(0,os.path.join('$DISPLAY_DIR','.
 # ── Parse flags ───────────────────────────────────────────────────────────────
 LAN_FLAG=""
 TLS_MODE=false
+TUNNEL_MODE=false
+TUNNEL_PID_FILE="$DISPLAY_DIR/.tunnel.pid"
+TUNNEL_LOG="$DISPLAY_DIR/tunnel.log"
 
 for arg in "$@"; do
   case "$arg" in
     --lan) LAN_FLAG="--lan" ;;
     --tls) TLS_MODE=true ;;
+    --tunnel) TUNNEL_MODE=true ;;
   esac
 done
+
+if $TUNNEL_MODE && $TLS_MODE; then
+  echo "Error: --tunnel already serves HTTPS through Cloudflare; drop --tls"
+  exit 1
+fi
 
 if $TLS_MODE && [[ -z "$LAN_FLAG" ]]; then
   echo "Error: --tls requires --lan (TLS is only meaningful for network access)"
@@ -83,7 +93,22 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE"
 fi
 pkill -9 -f "dnd-display-app\.py" 2>/dev/null || true
+# …and any tunnel from a previous launch
+if [[ -f "$TUNNEL_PID_FILE" ]]; then
+  kill "$(cat "$TUNNEL_PID_FILE")" 2>/dev/null || true
+  rm -f "$TUNNEL_PID_FILE"
+fi
 sleep 0.3
+
+# ── Remote-play key ──────────────────────────────────────────────────────────
+# The server only admits tunnelled requests that carry this key (set as a
+# cookie by the invite link). A fresh key per launch means old invite links
+# stop working; no tunnel → no key → remote access is refused outright.
+rm -f "$RT/.tunnel_key" "$RT/invite.txt"
+if $TUNNEL_MODE; then
+  python3 -c "import secrets; print(secrets.token_urlsafe(24))" > "$RT/.tunnel_key"
+  chmod 600 "$RT/.tunnel_key" 2>/dev/null || true
+fi
 
 # ── Dependency check (first run) ──────────────────────────────────────────────
 # The display companion is optional — core gameplay (dice, combat, tracker, XP,
@@ -150,7 +175,49 @@ for i in $(seq 1 10); do
       echo "══════════════════════════════════════════════════════════════"
     fi
 
-    open "$LOCAL_URL" 2>/dev/null || true
+    if $TUNNEL_MODE; then
+      CF="$(command -v cloudflared 2>/dev/null || command -v cloudflared.exe 2>/dev/null)"
+      for c in "/c/Program Files (x86)/cloudflared/cloudflared.exe" "/c/Program Files/cloudflared/cloudflared.exe" \
+               "$LOCALAPPDATA/Microsoft/WinGet/Links/cloudflared.exe"; do
+        [[ -z "$CF" && -x "$c" ]] && CF="$c"
+      done
+      if [[ -z "$CF" ]]; then
+        echo ""
+        echo "Internet play needs Cloudflare's free 'cloudflared' tool (one-time install):"
+        echo "    Windows:  winget install --id Cloudflare.cloudflared"
+        echo "    macOS:    brew install cloudflared"
+        echo "    Linux:    https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+        echo "Then run this command again. The display is running locally meanwhile."
+      else
+        : > "$TUNNEL_LOG"
+        nohup "$CF" tunnel --no-autoupdate --url "http://localhost:5001" > "$TUNNEL_LOG" 2>&1 &
+        echo $! > "$TUNNEL_PID_FILE"
+        PUBLIC=""
+        for j in $(seq 1 60); do
+          sleep 0.5
+          PUBLIC="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | head -1)"
+          [[ -n "$PUBLIC" ]] && break
+        done
+        if [[ -n "$PUBLIC" ]]; then
+          INVITE="$PUBLIC/join?key=$(cat "$RT/.tunnel_key")"
+          echo "$INVITE" > "$RT/invite.txt"
+          echo ""
+          echo "══════════════════════════════════════════════════════════════"
+          echo "  INTERNET PLAY — send this invite link to your players:"
+          echo ""
+          echo "    $INVITE"
+          echo ""
+          echo "  It opens the phone controller. Anyone with the link can play,"
+          echo "  so share it privately. It stops working when the display stops."
+          echo "  (Saved to $RT/invite.txt)"
+          echo "══════════════════════════════════════════════════════════════"
+        else
+          echo "Warning: the tunnel did not report a public address. See $TUNNEL_LOG"
+        fi
+      fi
+    fi
+
+    open "$LOCAL_URL" 2>/dev/null || start "" "$LOCAL_URL" 2>/dev/null || true
     exit 0
   fi
 done

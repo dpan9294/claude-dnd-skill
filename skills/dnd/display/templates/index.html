@@ -8,6 +8,8 @@
 <meta name="dnd-token" content="{{ lan_token }}">
 <meta name="narrator-voice" content="{{ narrator_voice }}">
 <meta name="tts-available" content="{{ '1' if tts_available else '0' }}">
+<meta name="ui-lang" content="{{ ui_lang }}">
+<meta name="default-skin" content="{{ default_skin }}">
 
 <!-- Theme anti-FOUC. Runs synchronously before the stylesheet parses so the
      correct data-theme attribute is on <html> before any rule resolves —
@@ -28,6 +30,7 @@
   window._SKINS = [
     { id: 'vellum',    label: 'Vellum'    },
     { id: 'editorial', label: 'Editorial' },
+    { id: 'ash',       label: 'Ash', base: 'editorial', variant: 'ash' },
   ];
 
   (function () {
@@ -43,7 +46,16 @@
       // data-skin to their own id. Overlays set data-skin to base AND
       // data-variant to variant — mirrored in _apply() so the anti-FOUC and
       // the picker stay in lockstep.
-      var skId = window.localStorage.getItem('dnd-skin');
+      // Interface language: ?lang=uk|en (remembered per device) > campaign default.
+      var _meta = function (n) { var m = document.querySelector('meta[name="' + n + '"]'); return m ? m.content : ''; };
+      var _ql = new URLSearchParams(location.search).get('lang');
+      if (_ql === 'uk' || _ql === 'en') window.localStorage.setItem('dnd-lang', _ql);
+      var lang = window.localStorage.getItem('dnd-lang') || _meta('ui-lang') || 'en';
+      if (lang !== 'uk') lang = 'en';
+      document.documentElement.setAttribute('data-ui-lang', lang);
+      document.documentElement.setAttribute('lang', lang);
+
+      var skId = window.localStorage.getItem('dnd-skin') || _meta('default-skin');
       var sk = null;
       for (var i = 0; i < window._SKINS.length; i++) {
         if (window._SKINS[i].id === skId) { sk = window._SKINS[i]; break; }
@@ -70,6 +82,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
 <!-- Editorial skin fonts (Colossal redesign) — loaded always, used only under data-skin="editorial" -->
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<!-- Map + Ash skin fonts (Alegreya: full Cyrillic) -->
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;1,400&family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/ext/map.css">
+<link rel="stylesheet" href="/ext/ash.css">
 <link rel="icon" type="image/x-icon"  href="/favicon.ico">
 <link rel="icon" type="image/png" sizes="32x32"  href="/icons/app_icon_32.png">
 <link rel="apple-touch-icon" sizes="180x180"      href="/icons/app_icon_180.png">
@@ -3667,6 +3683,10 @@
   </div>
 </div>
 
+<!-- Dungeon map — TV button + overlay (rendered by /ext/map.js) -->
+<button id="map-btn" type="button" title="Map"><span class="ed-ic" aria-hidden="true">🗺</span> <span class="ed-lbl">Map</span></button>
+<div id="map-overlay" hidden><div id="map-overlay-body"></div></div>
+
 <!-- DM Help — on-demand hint button -->
 <button id="dm-help-btn" title="Request a DM hint for the current scene">◈ DM Help</button>
 
@@ -3747,6 +3767,7 @@
       <button class="dp-tab active" data-tab="move" type="button">Move</button>
       <button class="dp-tab"        data-tab="roll" type="button">Roll</button>
       <button class="dp-tab"        data-tab="character" type="button">Sheet</button>
+      <button class="dp-tab"        data-tab="map" type="button">Map</button>
     </div>
     <div id="phone-status" data-tab-section="move"></div>
     <div id="staged-queue" data-tab-section="move"></div>
@@ -3799,6 +3820,8 @@
         <button id="dp-roll">Roll</button>
       </div>
     </div>
+    <!-- Phone-only dungeon map (Map tab) — rendered by /ext/map.js -->
+    <div id="map-pane" data-tab-section="map"></div>
     <!-- Phone-only character sheet pane (Sheet tab) -->
     <div id="character-pane" data-tab-section="character">
       <div id="cp-status">Loading…</div>
@@ -6915,6 +6938,8 @@ function _effectiveTheme(theme) {
 
     function _read() {
       let v = null; try { v = localStorage.getItem('dnd-skin'); } catch (_) {}
+      // No per-device choice yet → the campaign's display_skin default (meta).
+      if (!v) { const m = document.querySelector('meta[name="default-skin"]'); v = m ? m.content : null; }
       return _SKINS.some(s => s.id === v) ? v : 'vellum';
     }
 
@@ -7633,6 +7658,9 @@ function connect() {
     let payload;
     try { payload = JSON.parse(e.data); } catch { return; }
 
+    if (payload.map !== undefined && window.DndMap) {
+      window.DndMap.update(payload.map);
+    }
     if (payload.dice_request && typeof window._onDiceRequest === 'function') {
       window._onDiceRequest(payload.dice_request);
     }
@@ -7840,7 +7868,7 @@ function _onscreenDiceOn() { try { return localStorage.getItem('dnd-onscreen-dic
     // Adopt the existing fixed-position action buttons into the rail. Because
     // they are position:fixed, Vellum (#ed-rail: display:contents) leaves them
     // exactly where they were; Editorial lays them out as a vertical column.
-    ['dm-help-btn', 'phone-mode-btn'].forEach(id => {
+    ['map-btn', 'dm-help-btn', 'phone-mode-btn'].forEach(id => {
       const el = document.getElementById(id);
       if (el && el.parentElement !== rail) rail.appendChild(el);
     });
@@ -8059,7 +8087,7 @@ function _initInputTabs() {
 }
 
 function _setActiveTab(tab) {
-  if (tab !== 'move' && tab !== 'roll' && tab !== 'character') return;
+  if (tab !== 'move' && tab !== 'roll' && tab !== 'character' && tab !== 'map') return;
   const body = document.getElementById('input-body');
   if (!body) return;
   body.dataset.activeTab = tab;
@@ -8075,6 +8103,7 @@ function _setActiveTab(tab) {
   // each subsequent open so HP / slots / conditions stay current with the
   // campaign file (which the DM updates between turns).
   if (tab === 'character') _loadCharacterSheet();
+  if (tab === 'map' && window.DndMap) window.DndMap.shown();
 }
 
 // ── Character sheet pane (Sheet tab) ─────────────────────────────────────
@@ -8500,5 +8529,7 @@ function _initDicePad() {
   window._onDiceRequestCancelled = _onDiceRequestCancelled;
 }
 </script>
+<script src="/ext/i18n-uk.js"></script>
+<script src="/ext/map.js"></script>
 </body>
 </html>

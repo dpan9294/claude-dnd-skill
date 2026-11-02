@@ -195,8 +195,8 @@ def _find_char_path(campaign: str, char_name: str) -> pathlib.Path:
 def _read_char_state(path: pathlib.Path) -> tuple[int, int]:
     """Read current XP and level from a character file. Returns (xp, level)."""
     text = path.read_text(encoding="utf-8")
-    xp_m   = re.search(r"\*\*(?:XP|经验|经验值):\*\*\s*(\d+)", text)
-    level_m = re.search(r"\*\*(?:Level|等级):\*\*\s*(\d+)", text)
+    xp_m   = re.search(r"\*\*(?:XP|经验|经验值|Досвід):\*\*\s*(\d+)", text)
+    level_m = re.search(r"\*\*(?:Level|等级|Рівень):\*\*\s*(\d+)", text)
     xp    = int(xp_m.group(1))    if xp_m    else 0
     level = int(level_m.group(1)) if level_m else 1
     return xp, level
@@ -225,7 +225,7 @@ def _write_char_xp(path: pathlib.Path, new_xp: int, current_level: int) -> bool:
     # written when it had. The substitution COUNT is the only thing that answers
     # "did the regex match", which is what the warning is actually about.
     updated, hits = re.subn(
-        r"\*\*(XP|经验|经验值):\*\*\s*(?:\d+)?\s*/\s*\d+[^\n|]*",
+        r"\*\*(XP|经验|经验值|Досвід):\*\*\s*(?:\d+)?\s*/\s*\d+[^\n|]*",
         _repl,
         text,
         count=1,
